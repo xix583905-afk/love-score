@@ -19,7 +19,58 @@ export default function App() {
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem("history");
     return saved ? JSON.parse(saved) : [];
-  });
+  });useEffect(() => {
+  async function loadData() {
+    const { data } = await supabase
+      .from("score_data")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (data && data.length > 0) {
+      setScore(data[0].score);
+
+      setHistory(
+        data.map(item => ({
+          time: new Date(item.created_at).toLocaleString(),
+          reason: item.reason,
+          value: item.value ?? 0,
+        }))
+      );
+    }
+  }
+
+  loadData();
+
+  const channel = supabase
+    .channel("score-realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "score_data",
+      },
+      payload => {
+        const item = payload.new;
+
+        setScore(item.score);
+
+        setHistory(history => [
+          {
+            time: new Date(item.created_at).toLocaleString(),
+            reason: item.reason,
+            value: item.value ?? 0,
+          },
+          ...history,
+        ]);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
   useEffect(() => {
     localStorage.setItem("score", score);
